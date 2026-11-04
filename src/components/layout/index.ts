@@ -1,5 +1,6 @@
 // src/components/layout/index.ts
-// Layout component exports - TODO: implement
+// Layout component exports
 
 export { Header } from "./Header";
 export { Footer } from "./Footer";
+export { Sidebar } from "./Sidebar";
