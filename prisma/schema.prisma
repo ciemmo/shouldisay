@@ -122,9 +122,11 @@ model VerificationToken {
 }
 
 enum Verdict {
+  GOOD
   OK
   CAUTION
   NOT_OK
+  BAD
 }
 
 enum SubscriptionStatus {

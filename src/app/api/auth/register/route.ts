@@ -8,7 +8,7 @@ import { registerUser } from "@/lib/auth";
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  name: z.string().min(2).max(100).optional(),
+  name: z.string().max(100).optional().or(z.literal("")).transform(val => val === "" ? undefined : val),
 });
 
 export async function POST(request: NextRequest) {

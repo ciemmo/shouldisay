@@ -10,6 +10,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:docker": "docker run --rm --network container:shouldisay-postgres -v \"${PWD}:/app\" -w /app node:20-bookworm sh -c \"npx prisma migrate dev\"",
     "db:studio": "prisma studio",
     "db:seed": "tsx scripts/seed-db.ts",
     "postinstall": "prisma generate"
