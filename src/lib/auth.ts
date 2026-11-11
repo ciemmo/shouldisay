@@ -15,12 +15,6 @@ const loginSchema = z.object({
   password: z.string().min(8),
 });
 
-const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  name: z.string().min(2).max(100).optional(),
-});
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
@@ -81,8 +75,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id as string;
-        (session.user as any).subscriptionStatus = token.subscriptionStatus;
+        if (token.id) session.user.id = token.id;
+        session.user.subscriptionStatus = token.subscriptionStatus ?? "FREE";
       }
       return session;
     },

@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { z } from "zod";
 import { analyzeText } from "@/lib/ml/pipeline";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 
 // Input validation
 const analyzeSchema = z.object({
@@ -100,10 +101,12 @@ export async function POST(request: NextRequest) {
         inputHash: hashText(text),
         verdict: result.verdict,
         confidence: result.confidence,
-        severity: result.severity,
-        categories: result.categories,
-        feedback: result.feedback,
-        contextAnalysis: result.contextAnalysis || null,
+        severity: { ...result.severity },
+        categories: result.categories.map((category) => ({ ...category })),
+        feedback: { ...result.feedback },
+        contextAnalysis: result.contextAnalysis
+          ? { ...result.contextAnalysis }
+          : Prisma.DbNull,
         modelVersion: result.metadata.modelVersion,
         processingTime: result.metadata.processingTime,
         charCount: result.metadata.charCount,

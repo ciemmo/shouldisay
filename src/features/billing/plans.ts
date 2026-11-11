@@ -1,7 +1,7 @@
 // src/features/billing/plans.ts
 // Plan definitions - TODO: implement
 
-import { Plan, PlanLimits } from "./types";
+import { Plan } from "./types";
 
 export const PLANS: Plan[] = [];
 export function getPlanById() { return undefined; }

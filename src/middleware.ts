@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 const protectedRoutes = ["/dashboard/analyze", "/dashboard/history", "/dashboard/settings", "/dashboard/billing", "/dashboard/analytics"];
 const authRoutes = ["/login", "/register"];
 
-export default auth((req: { nextUrl: URL; auth: any }) => {
+export default auth((req) => {
   const { nextUrl } = req;
   const isLoggedIn = !!req.auth;
   const isProtected = protectedRoutes.some((route) =>

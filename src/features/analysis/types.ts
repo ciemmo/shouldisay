@@ -2,6 +2,7 @@
 // Analysis feature types - TODO: implement
 
 export * from "@/types/analysis";
+import type { AnalysisResult } from "@/types/analysis";
 
 export interface AnalysisInput {
   text: string;
@@ -12,5 +13,5 @@ export interface AnalysisInput {
 export interface AnalysisJob {
   id: string; userId: string; input: AnalysisInput;
   status: "pending" | "processing" | "completed" | "failed";
-  result?: any; error?: string; createdAt: Date; updatedAt: Date;
+  result?: AnalysisResult; error?: string; createdAt: Date; updatedAt: Date;
 }

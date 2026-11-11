@@ -1,7 +1,11 @@
 // Model registry - handles loading and caching of Transformers.js models
 // Runs server-side in Next.js API routes
 
-import { pipeline, Pipeline, env } from "@xenova/transformers";
+import {
+  pipeline,
+  TextClassificationPipeline,
+  env,
+} from "@xenova/transformers";
 
 // Configure Transformers.js for Node.js environment
 env.allowLocalModels = false; // Download from Hugging Face Hub
@@ -10,12 +14,12 @@ env.localModelPath = undefined; // Use default cache location
 
 // Model configurations
 export interface ModelConfig {
-  task: string;
+  task: "sentiment-analysis" | "text-classification";
   model: string;
   quantized: boolean;
 }
 
-export const MODEL_CONFIGS: Record<string, ModelConfig> = {
+export const MODEL_CONFIGS = {
   sentiment: {
     task: "sentiment-analysis",
     model: "Xenova/distilbert-base-uncased-finetuned-sst-2-english",
@@ -26,16 +30,18 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
     model: "Xenova/distilbert-base-uncased-emotion",
     quantized: true,
   },
-};
+} satisfies Record<string, ModelConfig>;
 
 // In-memory cache for loaded pipelines
-const pipelineCache = new Map<string, Pipeline>();
+const pipelineCache = new Map<keyof typeof MODEL_CONFIGS, TextClassificationPipeline>();
 
 /**
  * Get or create a pipeline for the given model config
  * Models are cached in memory after first load
  */
-export async function getPipeline(key: keyof typeof MODEL_CONFIGS): Promise<Pipeline> {
+export async function getPipeline(
+  key: keyof typeof MODEL_CONFIGS
+): Promise<TextClassificationPipeline> {
   if (pipelineCache.has(key)) {
     return pipelineCache.get(key)!;
   }

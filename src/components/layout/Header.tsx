@@ -4,6 +4,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
@@ -115,9 +116,12 @@ export function Header() {
               onClick={() => setUserMenuOpen(!userMenuOpen)}
             >
               {session.user?.image ? (
-                <img
+                <Image
                   src={session.user.image}
                   alt=""
+                  width={32}
+                  height={32}
+                  unoptimized
                   className="h-8 w-8 rounded-full"
                 />
               ) : (

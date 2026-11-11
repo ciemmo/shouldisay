@@ -1,7 +1,8 @@
 // src/types/user.ts
 // User-related types
 
-import { SubscriptionStatus } from "@prisma/client";
+import type { SubscriptionStatus } from "@prisma/client";
+export type { SubscriptionStatus } from "@prisma/client";
 
 export interface User {
   id: string;

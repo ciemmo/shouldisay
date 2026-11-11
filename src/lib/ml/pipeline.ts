@@ -2,6 +2,7 @@
 // Uses Transformers.js models for context-aware analysis
 
 import { getPipeline } from "./models/registry";
+import type { TextClassificationOutput } from "@xenova/transformers";
 
 export interface AnalysisInput {
   text: string;
@@ -90,9 +91,8 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
 async function runSentimentAnalysis(text: string): Promise<{ label: string; score: number }> {
   const pipe = await getPipeline("sentiment");
   const result = await pipe(text);
-
-  // Transformers.js returns array of { label: "POSITIVE" | "NEGATIVE", score: number }
-  const top = Array.isArray(result) ? result[0] : result;
+  const top = normalizeClassificationOutput(result)[0];
+  if (!top) throw new Error("Sentiment analysis returned no predictions");
   return { label: top.label, score: top.score };
 }
 
@@ -102,10 +102,21 @@ async function runSentimentAnalysis(text: string): Promise<{ label: string; scor
  */
 async function runEmotionAnalysis(text: string): Promise<Array<{ label: string; score: number }>> {
   const pipe = await getPipeline("emotion");
-  const result = await pipe(text, { topK: 6 });
+  const result = await pipe(text, { topk: 6 });
 
-  // Returns array of { label, score } sorted by score descending
-  return Array.isArray(result) ? result : [result];
+  return normalizeClassificationOutput(result);
+}
+
+function isBatchedOutput(
+  output: TextClassificationOutput | TextClassificationOutput[]
+): output is TextClassificationOutput[] {
+  return Array.isArray(output[0]);
+}
+
+function normalizeClassificationOutput(
+  output: TextClassificationOutput | TextClassificationOutput[]
+): TextClassificationOutput {
+  return isBatchedOutput(output) ? output[0] ?? [] : output;
 }
 
 /**
@@ -299,7 +310,7 @@ async function analyzeContext(
   const uniqueWords = new Set(words);
   const repetitionRatio = uniqueWords.size / words.length;
 
-  let flow: AnalysisResult["contextAnalysis"]["flow"] = "neutral";
+  let flow: NonNullable<AnalysisResult["contextAnalysis"]>["flow"] = "neutral";
   const patterns: string[] = [];
   const recommendations: string[] = [];
 

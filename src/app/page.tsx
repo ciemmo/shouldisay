@@ -4,7 +4,6 @@
 import Link from "next/link";
 import { LandingHeader, Footer } from "@/components/layout";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent } from "@/components/ui/Card";
 import {
   MessageSquare,
   AlertTriangle,
