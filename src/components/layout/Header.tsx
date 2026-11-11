@@ -31,7 +31,7 @@ export function Header() {
     return (
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <Link href="/" className="font-bold text-xl">ShouldISay</Link>
+          <Link href="/dashboard" className="font-bold text-xl">ShouldISay</Link>
           <div className="flex items-center gap-4">
             <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
             <div className="h-8 w-20 animate-pulse rounded bg-muted" />
@@ -45,7 +45,7 @@ export function Header() {
     return (
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <Link href="/" className="font-bold text-xl">ShouldISay</Link>
+          <Link href="/dashboard" className="font-bold text-xl">ShouldISay</Link>
           <nav className="flex items-center gap-4">
             <Link href="/login">
               <Button variant="ghost" size="sm">Sign In</Button>
@@ -72,7 +72,7 @@ export function Header() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <Link href="/dashboard/analyze" className="font-bold text-xl">
+          <Link href="/dashboard" className="font-bold text-xl">
             ShouldISay
           </Link>
         </div>
@@ -158,7 +158,7 @@ export function Header() {
                   Billing
                 </Link>
                 <button
-                  onClick={() => signOut({ callbackUrl: "/" })}
+                  onClick={() => signOut({ callbackUrl: "/about" })}
                   className="flex items-center gap-2 w-full px-4 py-2 text-sm text-foreground hover:bg-accent text-left"
                 >
                   <LogOut className="h-4 w-4" />
@@ -214,7 +214,7 @@ export function Header() {
                 Settings
               </Link>
               <button
-                onClick={() => signOut({ callbackUrl: "/" })}
+                onClick={() => signOut({ callbackUrl: "/about" })}
                 className="px-4 py-3 text-lg font-medium hover:bg-accent rounded-md text-left w-full"
               >
                 Sign Out
