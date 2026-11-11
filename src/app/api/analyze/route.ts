@@ -2,10 +2,9 @@
 // Validates input, enforces tier limits, runs ML pipeline, saves to DB
 
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 import { z } from "zod";
 import { analyzeText } from "@/lib/ml/pipeline";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 // Input validation
@@ -28,7 +27,7 @@ const TIER_LIMITS = {
 export async function POST(request: NextRequest) {
   try {
     // Get authenticated user
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -4,7 +4,7 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
-const protectedRoutes = ["/dashboard", "/analyze", "/history", "/settings", "/billing"];
+const protectedRoutes = ["/dashboard/analyze", "/dashboard/history", "/dashboard/settings", "/dashboard/billing", "/dashboard/analytics"];
 const authRoutes = ["/login", "/register"];
 
 export default auth((req: { nextUrl: URL; auth: any }) => {
@@ -27,7 +27,7 @@ export default auth((req: { nextUrl: URL; auth: any }) => {
 
   // Redirect authenticated users away from auth pages
   if (isAuthRoute && isLoggedIn) {
-    const callbackUrl = nextUrl.searchParams.get("callbackUrl") || "/dashboard";
+    const callbackUrl = nextUrl.searchParams.get("callbackUrl") || "/dashboard/analyze";
     return NextResponse.redirect(new URL(callbackUrl, nextUrl.origin));
   }
 
