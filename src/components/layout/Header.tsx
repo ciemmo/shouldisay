@@ -9,7 +9,7 @@ import { useSession, signOut } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "./BrandMark";
-import { Menu, X, User, Settings, LogOut, ChevronDown } from "lucide-react";
+import { Menu, X, User, Settings, CreditCard, LogOut, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 export function Header() {
@@ -150,6 +150,14 @@ export function Header() {
                   <p className="text-xs text-muted-foreground truncate">{session.user?.email}</p>
                 </div>
                 <Link
+                  href="/dashboard/profile"
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-accent"
+                  onClick={() => setUserMenuOpen(false)}
+                >
+                  <User className="h-4 w-4" />
+                  Profile
+                </Link>
+                <Link
                   href="/dashboard/settings"
                   className="flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-accent"
                   onClick={() => setUserMenuOpen(false)}
@@ -162,7 +170,7 @@ export function Header() {
                   className="flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-accent"
                   onClick={() => setUserMenuOpen(false)}
                 >
-                  <User className="h-4 w-4" />
+                  <CreditCard className="h-4 w-4" />
                   Billing
                 </Link>
                 <button
@@ -213,6 +221,13 @@ export function Header() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Billing
+              </Link>
+              <Link
+                href="/dashboard/profile"
+                className="px-4 py-3 text-lg font-medium hover:bg-accent rounded-md"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Profile
               </Link>
               <Link
                 href="/dashboard/settings"
