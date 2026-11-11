@@ -9,6 +9,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { z } from "zod";
+import { createUser, getUserByEmail } from "@/features/user/queries";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -99,27 +100,9 @@ export async function registerUser(
   password: string,
   name?: string
 ) {
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await getUserByEmail(email);
   if (existing) throw new Error("Email already registered");
 
   const passwordHash = await hashPassword(password);
-  const user = await prisma.user.create({
-    data: {
-      email,
-      passwordHash,
-      name,
-    },
-  });
-
-  // Create default usage stats
-  await prisma.usageStats.create({
-    data: { userId: user.id },
-  });
-
-  // Create default subscription (FREE)
-  await prisma.subscription.create({
-    data: { userId: user.id },
-  });
-
-  return user;
+  return createUser({ email, passwordHash, name });
 }
