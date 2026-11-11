@@ -5,6 +5,7 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "./BrandMark";
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
@@ -53,11 +54,7 @@ export function Footer() {
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
             <Link href="/dashboard" className="flex items-center gap-2 font-bold text-xl text-foreground mb-4" aria-label="ShouldISay Home">
-              <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-brand-foreground">
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-              </span>
+              <BrandMark />
               <span>ShouldISay</span>
             </Link>
             <p className="text-sm text-muted-foreground max-w-xs">

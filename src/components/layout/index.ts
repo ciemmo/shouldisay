@@ -5,3 +5,4 @@ export { Header } from "./Header";
 export { Footer } from "./Footer";
 export { Sidebar } from "./Sidebar";
 export { LandingHeader } from "./LandingHeader";
+export { BrandMark } from "./BrandMark";

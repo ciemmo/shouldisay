@@ -8,6 +8,7 @@ import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "./BrandMark";
 import { Menu, X, User, Settings, LogOut, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
@@ -31,7 +32,10 @@ export function Header() {
     return (
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <Link href="/dashboard" className="font-bold text-xl">ShouldISay</Link>
+          <Link href="/dashboard" className="flex items-center gap-2 font-bold text-xl">
+            <BrandMark />
+            ShouldISay
+          </Link>
           <div className="flex items-center gap-4">
             <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
             <div className="h-8 w-20 animate-pulse rounded bg-muted" />
@@ -45,7 +49,10 @@ export function Header() {
     return (
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <Link href="/dashboard" className="font-bold text-xl">ShouldISay</Link>
+          <Link href="/dashboard" className="flex items-center gap-2 font-bold text-xl">
+            <BrandMark />
+            ShouldISay
+          </Link>
           <nav className="flex items-center gap-4">
             <Link href="/login">
               <Button variant="ghost" size="sm">Sign In</Button>
@@ -72,7 +79,8 @@ export function Header() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <Link href="/dashboard" className="font-bold text-xl">
+          <Link href="/dashboard" className="flex items-center gap-2 font-bold text-xl">
+            <BrandMark />
             ShouldISay
           </Link>
         </div>
