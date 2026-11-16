@@ -1,8 +1,10 @@
 // ML Pipeline - orchestrates tone, emotion, and severity analysis
-// Uses Transformers.js models for context-aware analysis
+// Uses Transformers.js models for context-aware analysis with rule-based fallback
 
 import { getPipeline } from "./models/registry";
 import type { TextClassificationOutput } from "@xenova/transformers";
+import { analyzeWithHeuristics, checkRedFlags } from "./rules/heuristics";
+import { analyzeContext as analyzeContextML } from "./classifiers/context";
 
 export interface AnalysisInput {
   text: string;
@@ -44,43 +46,86 @@ export interface AnalysisResult {
 }
 
 /**
- * Main analysis function - runs all classifiers in parallel
+ * Main analysis function - runs ML classifiers with rule-based fallback
  */
 export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult> {
   const startTime = Date.now();
   const { text } = input;
 
-  // Run sentiment and emotion classifiers in parallel
-  const [sentimentResult, emotionResult] = await Promise.all([
-    runSentimentAnalysis(text),
-    runEmotionAnalysis(text),
-  ]);
+  // Check for red flags first (always run, even before ML)
+  const redFlags = checkRedFlags(text);
 
-  // Combine results
-  const categories = combineCategories(sentimentResult, emotionResult);
-  const severity = calculateSeverity(categories, sentimentResult);
-  const verdict = determineVerdict(severity.level, sentimentResult);
-  const confidence = calculateConfidence(sentimentResult, emotionResult);
-  const feedback = generateFeedback(text, categories, severity, verdict);
+  let analysisResult: AnalysisResult;
+  let modelVersion = "transformers.js-v1";
 
-  // Context analysis if conversation history provided
+  try {
+    // Try ML-based analysis first
+    const [sentimentResult, emotionResult] = await Promise.all([
+      runSentimentAnalysis(text),
+      runEmotionAnalysis(text),
+    ]);
+
+    // Combine ML results
+    const categories = combineCategories(sentimentResult, emotionResult);
+    const severity = calculateSeverity(categories, sentimentResult);
+    const verdict = determineVerdict(severity.level, sentimentResult);
+    const confidence = calculateConfidence(sentimentResult, emotionResult);
+    const feedback = generateFeedback(text, categories, severity, verdict);
+
+    analysisResult = {
+      verdict,
+      confidence,
+      severity,
+      categories,
+      feedback,
+      metadata: {
+        modelVersion,
+        processingTime: Date.now() - startTime,
+        charCount: text.length,
+      },
+    };
+  } catch (mlError) {
+    // Fallback to rule-based analysis
+    console.warn("[ML] Transformers.js failed, falling back to heuristics:", mlError);
+    modelVersion = "heuristics-fallback-v1";
+
+    const heuristicResult = analyzeWithHeuristics(text);
+
+    // Override verdict if red flags detected
+    let verdict = heuristicResult.verdict;
+    if (redFlags.length > 0) {
+      verdict = "NOT_OK";
+    }
+
+    analysisResult = {
+      verdict,
+      confidence: heuristicResult.confidence,
+      severity: heuristicResult.severity,
+      categories: heuristicResult.categories,
+      feedback: {
+        explanation: heuristicResult.explanation + (redFlags.length > 0 ? ` ⚠️ ${redFlags.join("; ")}` : ""),
+        suggestions: heuristicResult.suggestions,
+      },
+      metadata: {
+        modelVersion,
+        processingTime: Date.now() - startTime,
+        charCount: text.length,
+      },
+    };
+  }
+
+  // Context analysis if conversation history provided (works with both ML and fallback)
+  // NOTE: Tier gating is enforced in the API route (src/app/api/analyze/route.ts).
+  // This function only runs when conversationHistory is explicitly provided.
+  // Free tier users will never have conversationHistory passed to analyzeText().
   let contextAnalysis: AnalysisResult["contextAnalysis"];
   if (input.conversationHistory && input.conversationHistory.length > 0) {
     contextAnalysis = await analyzeContext(text, input.conversationHistory);
   }
 
   return {
-    verdict,
-    confidence,
-    severity,
-    categories,
-    feedback,
+    ...analysisResult,
     contextAnalysis,
-    metadata: {
-      modelVersion: "transformers.js-v1",
-      processingTime: Date.now() - startTime,
-      charCount: text.length,
-    },
   };
 }
 

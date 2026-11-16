@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import { subMonths, format, startOfMonth, endOfMonth } from "date-fns";
 import { z } from "zod";
 
+export const dynamic = "force-dynamic";
+
 const severitySchema = z.object({ level: z.number() });
 const categoriesSchema = z.array(
   z.object({ category: z.string(), label: z.string() })

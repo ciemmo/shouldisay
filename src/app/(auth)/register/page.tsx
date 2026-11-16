@@ -3,10 +3,11 @@
 
 "use client";
 
+import { Suspense } from "react";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard/analyze";
@@ -143,5 +144,13 @@ export default function RegisterPage() {
         </a>
       </p>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[400px]">Loading...</div>}>
+      <RegisterForm />
+    </Suspense>
   );
 }

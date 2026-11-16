@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Run analysis
+    // Only pass conversationHistory for Pro/Active tiers (contextAnalysis is true for those tiers)
     const result = await analyzeText({
       text,
       conversationHistory: limits.contextAnalysis ? conversationHistory : undefined,

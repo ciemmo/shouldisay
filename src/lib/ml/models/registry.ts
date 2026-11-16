@@ -4,6 +4,7 @@
 import {
   pipeline,
   TextClassificationPipeline,
+  FeatureExtractionPipeline,
   env,
 } from "@xenova/transformers";
 
@@ -14,7 +15,7 @@ env.localModelPath = undefined; // Use default cache location
 
 // Model configurations
 export interface ModelConfig {
-  task: "sentiment-analysis" | "text-classification";
+  task: "sentiment-analysis" | "text-classification" | "feature-extraction";
   model: string;
   quantized: boolean;
 }
@@ -30,10 +31,15 @@ export const MODEL_CONFIGS = {
     model: "Xenova/distilbert-base-uncased-emotion",
     quantized: true,
   },
+  embedding: {
+    task: "feature-extraction",
+    model: "Xenova/all-MiniLM-L6-v2",
+    quantized: true,
+  },
 } satisfies Record<string, ModelConfig>;
 
 // In-memory cache for loaded pipelines
-const pipelineCache = new Map<keyof typeof MODEL_CONFIGS, TextClassificationPipeline>();
+const pipelineCache = new Map<keyof typeof MODEL_CONFIGS, TextClassificationPipeline | FeatureExtractionPipeline>();
 
 /**
  * Get or create a pipeline for the given model config
@@ -41,7 +47,7 @@ const pipelineCache = new Map<keyof typeof MODEL_CONFIGS, TextClassificationPipe
  */
 export async function getPipeline(
   key: keyof typeof MODEL_CONFIGS
-): Promise<TextClassificationPipeline> {
+): Promise<TextClassificationPipeline | FeatureExtractionPipeline> {
   if (pipelineCache.has(key)) {
     return pipelineCache.get(key)!;
   }

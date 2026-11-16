@@ -1,5 +1,9 @@
+// src/app/dashboard/(workspace)/analyze/page.tsx
+// Main analysis page with text input and results display
+
 "use client";
 
+import { Suspense } from "react";
 import { useState, useEffect, FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -7,7 +11,9 @@ import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Loader2, AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { Input } from "@/components/ui/Input";
+import { Label } from "@/components/ui/Label";
+import { Loader2, AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, RotateCcw, Upgrade, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AnalysisResult {
@@ -44,13 +50,14 @@ const flowConfig = {
   escalating: { color: "bg-red-100 text-red-800", label: "Escalating" },
 };
 
-export default function AnalyzePage() {
+function AnalyzeContent() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
   const analysisId = searchParams.get("id");
 
   const [text, setText] = useState("");
+  const [conversationHistory, setConversationHistory] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
@@ -60,9 +67,8 @@ export default function AnalyzePage() {
   const [loadedAnalysisId, setLoadedAnalysisId] = useState<string | null>(null);
   const isLoadingHistory = Boolean(analysisId && loadedAnalysisId !== analysisId);
 
-  const maxChars = session?.user
-    ? session.user.subscriptionStatus !== "FREE" ? 10000 : 500
-    : 500;
+  const isPro = session?.user?.subscriptionStatus !== "FREE" && session?.user?.subscriptionStatus !== "CANCELED" && session?.user?.subscriptionStatus !== "PAST_DUE";
+  const maxChars = isPro ? 10000 : 500;
 
   // Load existing analysis if ID provided
   useEffect(() => {
@@ -105,6 +111,7 @@ export default function AnalyzePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
+          conversationHistory: isPro ? conversationHistory : undefined,
           options: { detailLevel: "detailed", includeSuggestions: true }
         }),
       });
@@ -201,6 +208,48 @@ export default function AnalyzePage() {
               disabled={isLoading || isLoadingHistory}
               maxLength={maxChars}
             />
+
+            {/* Conversation History Input - Pro Tier Feature */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="conversation-history" className="text-sm font-medium">
+                  Conversation History (Pro)
+                </Label>
+                {!isPro && (
+                  <Badge variant="secondary" className="gap-1">
+                    <Lock className="h-3 w-3" />
+                    Pro Feature
+                  </Badge>
+                )}
+              </div>
+              <Textarea
+                id="conversation-history"
+                value={conversationHistory.join("\n---\n")}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setConversationHistory(val.split("\n---\n").filter(m => m.trim()));
+                }}
+                placeholder={isPro
+                  ? "Paste previous messages in this conversation (separate with --- on a new line)\nExample:\nHi, how are you?\n---\nI'm frustrated with this project\n---\nCan you help me?"
+                  : "Upgrade to Pro to analyze conversation context and detect escalation patterns"
+                }
+                className="min-h-[100px] resize-y"
+                disabled={!isPro || isLoading || isLoadingHistory}
+                maxLength={5000}
+              />
+              {!isPro && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Upgrade className="h-4 w-4 text-brand" />
+                  <span>Conversation context analysis detects escalation patterns and recurring issues. <a href="/dashboard/billing" className="underline hover:text-brand">Upgrade to Pro</a> to unlock.</span>
+                </div>
+              )}
+              {isPro && conversationHistory.length > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {conversationHistory.length} previous message{conversationHistory.length > 1 ? "s" : ""} included in analysis
+                </p>
+              )}
+            </div>
+
             <div className="flex items-center justify-between">
               <span className={cn("text-sm", charCount > maxChars * 0.9 ? "text-orange-600" : "text-muted-foreground")}>
                 {charCount} / {maxChars} characters
@@ -440,5 +489,13 @@ export default function AnalyzePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AnalyzePage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[400px]">Loading...</div>}>
+      <AnalyzeContent />
+    </Suspense>
   );
 }
