@@ -78,6 +78,52 @@ function meanPool(embeddings: Float32Array, attentionMask?: Float32Array): Float
 }
 
 /**
+ * Extract normalized sentence embedding from FeatureExtractionPipeline result
+ * Handles both pooled (mean/cls) and non-pooled outputs
+ */
+function extractSentenceEmbedding(result: Tensor): Float32Array {
+  // When pooling is 'mean' or 'cls', result.dims is [1, hidden_size]
+  // When pooling is 'none', result.dims is [1, seq_len, hidden_size]
+
+  const data = result.data as Float32Array;
+  const dims = result.dims;
+
+  if (dims.length === 2 && dims[0] === 1) {
+    // Already pooled: [1, hidden_size] -> just return the data
+    return data.slice(0, dims[1]);
+  }
+
+  if (dims.length === 3 && dims[0] === 1) {
+    // Not pooled: [1, seq_len, hidden_size] -> mean pool
+    const hiddenSize = dims[2];
+    const seqLen = dims[1];
+
+    const pooled = new Float32Array(hiddenSize);
+    for (let i = 0; i < seqLen; i++) {
+      for (let j = 0; j < hiddenSize; j++) {
+        pooled[j] += data[i * hiddenSize + j];
+      }
+    }
+    for (let j = 0; j < hiddenSize; j++) {
+      pooled[j] /= seqLen;
+    }
+
+    // Normalize
+    let norm = 0;
+    for (const v of pooled) norm += v * v;
+    norm = Math.sqrt(norm);
+    if (norm > 0) {
+      for (let j = 0; j < pooled.length; j++) pooled[j] /= norm;
+    }
+
+    return pooled;
+  }
+
+  // Fallback
+  return new Float32Array(384);
+}
+
+/**
  * Analyze sentiment trend using a simple keyword-based approach
  * Could be enhanced with a proper sentiment model
  */
@@ -184,32 +230,12 @@ export async function analyzeContext(messages: string[]): Promise<ContextAnalysi
   const embeddings: Float32Array[] = [];
 
   for (const message of messages) {
-    // The feature extraction pipeline returns token embeddings
-    // We need to mean pool to get sentence embedding
+    // The feature extraction pipeline returns a Tensor
+    // With pooling: 'mean', normalize: true, we get [1, hidden_size]
     const result = await embeddingPipe(message, { pooling: "mean", normalize: true });
 
-    // Result is a Float32Array (sentence embedding) when pooling is applied
-    // or tensor with shape [1, seq_len, hidden_size] without pooling
-    let embedding: Float32Array;
-
-    if (result instanceof Float32Array) {
-      // Already pooled and normalized
-      embedding = result;
-    } else if (result.data instanceof Float32Array) {
-      // Tensor output - mean pool
-      embedding = meanPool(result.data);
-      // Normalize
-      let norm = 0;
-      for (const v of embedding) norm += v * v;
-      norm = Math.sqrt(norm);
-      if (norm > 0) {
-        for (let i = 0; i < embedding.length; i++) embedding[i] /= norm;
-      }
-    } else {
-      // Fallback
-      embedding = new Float32Array(384);
-    }
-
+    // Extract sentence embedding from tensor
+    const embedding = extractSentenceEmbedding(result);
     embeddings.push(embedding);
   }
 

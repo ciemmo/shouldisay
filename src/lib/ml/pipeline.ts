@@ -120,7 +120,19 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
   // Free tier users will never have conversationHistory passed to analyzeText().
   let contextAnalysis: AnalysisResult["contextAnalysis"];
   if (input.conversationHistory && input.conversationHistory.length > 0) {
-    contextAnalysis = await analyzeContext(text, input.conversationHistory);
+    try {
+      // Use embedding-based ML context analyzer
+      const ctx = await analyzeContextML([...input.conversationHistory, text]);
+      contextAnalysis = {
+        flow: ctx.flow,
+        patterns: ctx.patterns,
+        recommendations: ctx.recommendations,
+      };
+    } catch (ctxError) {
+      // Fallback to simple pattern-based context analysis
+      console.warn("[ML] Context analysis failed, using fallback:", ctxError);
+      contextAnalysis = await analyzeContextFallback(text, input.conversationHistory);
+    }
   }
 
   return {
@@ -130,12 +142,59 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
 }
 
 /**
+ * Fallback context analysis using simple pattern detection
+ * Used when embedding model fails
+ */
+async function analyzeContextFallback(
+  currentText: string,
+  history: string[]
+): Promise<AnalysisResult["contextAnalysis"]> {
+  // Simple pattern detection
+  const recentMessages = history.slice(-5);
+  const allText = [...recentMessages, currentText].join(" ");
+
+  // Check for escalation
+  const negativeWords = ["angry", "frustrated", "upset", "annoyed", "furious"];
+  const negativeCount = negativeWords.filter(w => allText.toLowerCase().includes(w)).length;
+
+  // Check for repetition
+  const words = currentText.toLowerCase().split(/\s+/);
+  const uniqueWords = new Set(words);
+  const repetitionRatio = uniqueWords.size / words.length;
+
+  let flow: NonNullable<AnalysisResult["contextAnalysis"]>["flow"] = "neutral";
+  const patterns: string[] = [];
+  const recommendations: string[] = [];
+
+  if (negativeCount >= 2) {
+    flow = "escalating";
+    patterns.push("Increasing negative language detected");
+    recommendations.push("Consider pausing the conversation to de-escalate");
+  } else if (negativeCount === 1) {
+    flow = "negative";
+    patterns.push("Negative tone in recent messages");
+  }
+
+  if (repetitionRatio < 0.5 && words.length > 10) {
+    patterns.push("Repetitive language detected");
+    recommendations.push("Try varying your phrasing to communicate more clearly");
+  }
+
+  if (flow === "neutral" && patterns.length === 0) {
+    flow = "positive";
+    patterns.push("Conversation appears constructive");
+  }
+
+  return { flow, patterns, recommendations };
+}
+
+/**
  * Run sentiment analysis using DistilBERT SST-2
  * Returns positive/negative with confidence
  */
 async function runSentimentAnalysis(text: string): Promise<{ label: string; score: number }> {
   const pipe = await getPipeline("sentiment");
-  const result = await pipe(text);
+  const result = await pipe(text) as TextClassificationOutput | TextClassificationOutput[];
   const top = normalizeClassificationOutput(result)[0];
   if (!top) throw new Error("Sentiment analysis returned no predictions");
   return { label: top.label, score: top.score };
@@ -147,7 +206,7 @@ async function runSentimentAnalysis(text: string): Promise<{ label: string; scor
  */
 async function runEmotionAnalysis(text: string): Promise<Array<{ label: string; score: number }>> {
   const pipe = await getPipeline("emotion");
-  const result = await pipe(text, { topk: 6 });
+  const result = await pipe(text, { topk: 6 }) as TextClassificationOutput | TextClassificationOutput[];
 
   return normalizeClassificationOutput(result);
 }

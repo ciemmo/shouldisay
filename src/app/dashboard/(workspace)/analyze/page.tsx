@@ -11,9 +11,8 @@ import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
-import { Loader2, AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, RotateCcw, Upgrade, Lock } from "lucide-react";
+import { Loader2, AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, RotateCcw, TrendingUp, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AnalysisResult {
@@ -239,7 +238,7 @@ function AnalyzeContent() {
               />
               {!isPro && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Upgrade className="h-4 w-4 text-brand" />
+                  <TrendingUp className="h-4 w-4 text-brand" />
                   <span>Conversation context analysis detects escalation patterns and recurring issues. <a href="/dashboard/billing" className="underline hover:text-brand">Upgrade to Pro</a> to unlock.</span>
                 </div>
               )}
