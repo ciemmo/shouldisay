@@ -67,16 +67,35 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
 
     // Combine ML results
     const categories = combineCategories(sentimentResult, emotionResult);
-    const severity = calculateSeverity(categories, sentimentResult);
-    const verdict = determineVerdict(severity.level, sentimentResult);
+
+    // Deduplicate categories by category key (keep highest score)
+    const dedupedCategories = Object.values(
+      categories.reduce((acc, cat) => {
+        if (!acc[cat.category] || cat.score > acc[cat.category].score) {
+          acc[cat.category] = cat;
+        }
+        return acc;
+      }, {} as Record<string, CategoryScore>)
+    );
+
+    const severity = calculateSeverity(dedupedCategories, sentimentResult);
+
+    // Red flags always force NOT_OK verdict and maximum severity
+    let verdict = determineVerdict(severity.level, sentimentResult);
+    let finalSeverity = severity;
+    if (redFlags.length > 0) {
+      verdict = "NOT_OK";
+      finalSeverity = { level: 5, label: "Severe" };
+    }
+
     const confidence = calculateConfidence(sentimentResult, emotionResult);
-    const feedback = generateFeedback(text, categories, severity, verdict);
+    const feedback = generateFeedback(text, dedupedCategories, finalSeverity, verdict, redFlags);
 
     analysisResult = {
       verdict,
       confidence,
-      severity,
-      categories,
+      severity: finalSeverity,
+      categories: dedupedCategories,
       feedback,
       metadata: {
         modelVersion,
@@ -89,21 +108,16 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
     console.warn("[ML] Transformers.js failed, falling back to heuristics:", mlError);
     modelVersion = "heuristics-fallback-v1";
 
-    const heuristicResult = analyzeWithHeuristics(text);
-
-    // Override verdict if red flags detected
-    let verdict = heuristicResult.verdict;
-    if (redFlags.length > 0) {
-      verdict = "NOT_OK";
-    }
+    // Pass red flags to heuristic analysis so feedback accounts for them
+    const heuristicResult = analyzeWithHeuristics(text, redFlags);
 
     analysisResult = {
-      verdict,
+      verdict: heuristicResult.verdict,
       confidence: heuristicResult.confidence,
       severity: heuristicResult.severity,
       categories: heuristicResult.categories,
       feedback: {
-        explanation: heuristicResult.explanation + (redFlags.length > 0 ? ` ⚠️ ${redFlags.join("; ")}` : ""),
+        explanation: heuristicResult.explanation,
         suggestions: heuristicResult.suggestions,
       },
       metadata: {
@@ -201,12 +215,12 @@ async function runSentimentAnalysis(text: string): Promise<{ label: string; scor
 }
 
 /**
- * Run emotion classification using DistilBERT emotion model
- * Returns 6 emotions: anger, disgust, fear, joy, sadness, surprise
+ * Run emotion classification using Twitter RoBERTa sentiment model (3-class)
+ * Returns: negative, neutral, positive - used as emotion proxy
  */
 async function runEmotionAnalysis(text: string): Promise<Array<{ label: string; score: number }>> {
   const pipe = await getPipeline("emotion");
-  const result = await pipe(text, { topk: 6 }) as TextClassificationOutput | TextClassificationOutput[];
+  const result = await pipe(text, { topk: 3 }) as TextClassificationOutput | TextClassificationOutput[];
 
   return normalizeClassificationOutput(result);
 }
@@ -233,14 +247,12 @@ function combineCategories(
 ): CategoryScore[] {
   const categories: CategoryScore[] = [];
 
-  // Map emotions to our categories
+  // Map Twitter RoBERTa 3-class sentiment to our categories
+  // Labels: "negative", "neutral", "positive"
   const emotionToCategory: Record<string, { category: string; label: string }> = {
-    anger: { category: "aggressive", label: "Aggressive" },
-    disgust: { category: "rude", label: "Rude" },
-    fear: { category: "anxious", label: "Anxious" },
-    joy: { category: "positive", label: "Positive" },
-    sadness: { category: "dismissive", label: "Dismissive" },
-    surprise: { category: "surprised", label: "Surprised" },
+    negative: { category: "negative_tone", label: "Negative Tone" },
+    neutral: { category: "neutral_tone", label: "Neutral Tone" },
+    positive: { category: "positive_tone", label: "Positive Tone" },
   };
 
   // Add emotion-based categories (threshold: 0.15)
@@ -257,7 +269,7 @@ function combineCategories(
     }
   }
 
-  // Add sentiment as overall tone indicator
+  // Add sentiment as overall tone indicator (DistilBERT SST-2 labels: NEGATIVE, POSITIVE)
   if (sentiment.label === "NEGATIVE" && sentiment.score > 0.5) {
     categories.push({
       category: "negative_tone",
@@ -351,13 +363,40 @@ function generateFeedback(
   text: string,
   categories: CategoryScore[],
   severity: SeverityResult,
-  verdict: "OK" | "CAUTION" | "NOT_OK"
+  verdict: "OK" | "CAUTION" | "NOT_OK",
+  redFlags: string[] = []
 ): FeedbackResult {
   const topCategory = categories[0];
   const isNegative = verdict !== "OK";
 
   let explanation = "";
   const suggestions: string[] = [];
+
+  // Red flags always indicate serious issues
+  if (redFlags.length > 0) {
+    explanation = `⚠️ ${redFlags.join("; ")}. This message contains serious safety concerns and should not be sent.`;
+
+    // Specific suggestions based on red flag type
+    for (const flag of redFlags) {
+      if (flag.includes("Self-harm") || flag.includes("kill yourself") || flag.includes("kys")) {
+        suggestions.push("If you or someone you know is struggling, please reach out for help.");
+        suggestions.push("Crisis Text Line: Text HOME to 741741 (US/Canada/UK)");
+        suggestions.push("988 Suicide & Crisis Lifeline: Call or text 988 (US)");
+        suggestions.push("International: https://findahelpline.com/");
+      }
+      if (flag.includes("Hate speech")) {
+        suggestions.push("Hate speech is harmful and unacceptable. Consider how your words impact others.");
+      }
+      if (flag.includes("threat")) {
+        suggestions.push("Threats of violence are never appropriate. Seek help if you're feeling unsafe or angry.");
+      }
+      if (flag.includes("SSN") || flag.includes("credit card")) {
+        suggestions.push("Never share personal identification or financial information in messages.");
+      }
+    }
+
+    return { explanation, suggestions };
+  }
 
   if (!isNegative) {
     explanation = "Your message comes across as constructive and respectful. No significant tone issues detected.";
@@ -366,7 +405,12 @@ function generateFeedback(
     const primaryLabel = topCategory?.label || "negative tone";
     explanation = `Your message shows signs of ${primaryLabel.toLowerCase()} (severity: ${severity.label}). This may be perceived as ${verdict === "NOT_OK" ? "inappropriate or hurtful" : "potentially off-putting"} by the recipient.`;
 
-    // Category-specific suggestions
+    // Category-specific suggestions (ML-based categories)
+    if (categories.some(c => c.category === "negative_tone")) {
+      suggestions.push("Frame criticism constructively: \"This could be improved by...\" instead of \"This is bad\"");
+      suggestions.push("Offer specific suggestions: \"I think X would work better because...\"");
+      suggestions.push("Balance negative feedback with what's working well");
+    }
     if (categories.some(c => c.category === "aggressive")) {
       suggestions.push("Try softening demands: \"Could you please...\" instead of \"You must...\"");
       suggestions.push("Replace ultimatums with requests: \"It would help if...\" instead of \"Do this or else...\"");
@@ -388,7 +432,10 @@ function generateFeedback(
     suggestions.push("Consider the recipient's perspective: how would you feel receiving this?");
   }
 
-  return { explanation, suggestions };
+  // Deduplicate suggestions
+  const uniqueSuggestions = [...new Set(suggestions)].slice(0, 5);
+
+  return { explanation, suggestions: uniqueSuggestions };
 }
 
 /**

@@ -12,6 +12,20 @@ export interface PatternRule {
  * Negative tone patterns - indicate potential issues
  */
 export const NEGATIVE_PATTERNS: PatternRule[] = [
+  // Negative / critical language (constructive criticism but negative tone)
+  {
+    category: "negative_critical",
+    label: "Negative/Critical",
+    patterns: [
+      /\b(this is (not|bad|terrible|awful|horrible|wrong))\b/gi,
+      /\b(not good|not okay|not right|doesn't work|won't work)\b/gi,
+      /\b(failed|failure|broken|useless|pointless)\b/gi,
+      /\b(disappointed|unhappy|dissatisfied|frustrated)\b/gi,
+      /\b(problem|issue|concern|trouble)\b/gi,
+    ],
+    weight: 0.5,
+  },
+
   // Aggressive / demanding language
   {
     category: "aggressive",

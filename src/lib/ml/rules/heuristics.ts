@@ -16,7 +16,7 @@ export interface HeuristicResult {
  * Analyze text using only rule-based patterns
  * Used as fallback when ML models are unavailable
  */
-export function analyzeWithHeuristics(text: string): HeuristicResult {
+export function analyzeWithHeuristics(text: string, redFlags: string[] = []): HeuristicResult {
   const lowerText = text.toLowerCase();
   const wordCount = text.split(/\s+/).length;
 
@@ -84,18 +84,24 @@ export function analyzeWithHeuristics(text: string): HeuristicResult {
     5: "Severe",
   };
 
-  // Determine verdict
+  // Determine verdict - red flags always force NOT_OK
   let verdict: HeuristicResult["verdict"] = "OK";
-  if (level >= 4) verdict = "NOT_OK";
-  else if (level >= 3) verdict = "CAUTION";
-  else if (level === 2 && categories.some(c => NEGATIVE_CATEGORIES.includes(c.category))) verdict = "CAUTION";
+  if (redFlags.length > 0) {
+    verdict = "NOT_OK";
+  } else if (level >= 4) {
+    verdict = "NOT_OK";
+  } else if (level >= 3) {
+    verdict = "CAUTION";
+  } else if (level === 2 && categories.some(c => NEGATIVE_CATEGORIES.includes(c.category))) {
+    verdict = "CAUTION";
+  }
 
   // Confidence based on number and strength of matches
   const totalMatches = Object.values(categoryScores).reduce((sum, c) => sum + c.count, 0);
   const confidence = Math.min(0.85, 0.3 + totalMatches * 0.1 + categories.length * 0.05);
 
   // Generate explanation and suggestions
-  const { explanation, suggestions } = generateHeuristicFeedback(categories, verdict, severityScore);
+  const { explanation, suggestions } = generateHeuristicFeedback(categories, verdict, severityScore, redFlags);
 
   return {
     categories,
@@ -110,10 +116,37 @@ export function analyzeWithHeuristics(text: string): HeuristicResult {
 function generateHeuristicFeedback(
   categories: Array<{ category: string; score: number; label: string }>,
   verdict: "OK" | "CAUTION" | "NOT_OK",
-  severityScore: number
+  severityScore: number,
+  redFlags: string[] = []
 ): { explanation: string; suggestions: string[] } {
   const suggestions: string[] = [];
   let explanation = "";
+
+  // Red flags always indicate serious issues
+  if (redFlags.length > 0) {
+    explanation = `⚠️ ${redFlags.join("; ")}. This message contains serious safety concerns and should not be sent.`;
+
+    // Specific suggestions based on red flag type
+    for (const flag of redFlags) {
+      if (flag.includes("Self-harm") || flag.includes("kill yourself") || flag.includes("kys")) {
+        suggestions.push("If you or someone you know is struggling, please reach out for help.");
+        suggestions.push("Crisis Text Line: Text HOME to 741741 (US/Canada/UK)");
+        suggestions.push("988 Suicide & Crisis Lifeline: Call or text 988 (US)");
+        suggestions.push("International: https://findahelpline.com/");
+      }
+      if (flag.includes("Hate speech")) {
+        suggestions.push("Hate speech is harmful and unacceptable. Consider how your words impact others.");
+      }
+      if (flag.includes("threat")) {
+        suggestions.push("Threats of violence are never appropriate. Seek help if you're feeling unsafe or angry.");
+      }
+      if (flag.includes("SSN") || flag.includes("credit card")) {
+        suggestions.push("Never share personal identification or financial information in messages.");
+      }
+    }
+
+    return { explanation, suggestions };
+  }
 
   if (verdict === "OK") {
     explanation = "Your message appears constructive and respectful based on pattern analysis.";
@@ -151,6 +184,11 @@ function generateHeuristicFeedback(
       threatening: [
         "Avoid ultimatums. Express consequences calmly if needed.",
         "Seek mediation or a third party if the situation is escalating.",
+      ],
+      negative_critical: [
+        "Frame criticism constructively: \"This could be improved by...\" instead of \"This is bad\"",
+        "Offer specific suggestions: \"I think X would work better because...\"",
+        "Balance negative feedback with what's working well",
       ],
       sarcastic: [
         "Sarcasm often obscures your real message. Try being direct.",

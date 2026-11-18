@@ -11,7 +11,7 @@ import {
 // Configure Transformers.js for Node.js environment
 env.allowLocalModels = false; // Download from Hugging Face Hub
 env.useBrowserCache = false; // Disable browser cache (we're in Node)
-env.localModelPath = undefined; // Use default cache location
+// Note: Do NOT set localModelPath - setting it to undefined causes issues in Node.js
 
 // Model configurations
 export interface ModelConfig {
@@ -26,9 +26,11 @@ export const MODEL_CONFIGS = {
     model: "Xenova/distilbert-base-uncased-finetuned-sst-2-english",
     quantized: true,
   },
+  // Use Twitter RoBERTa sentiment (3-class: negative, neutral, positive) as emotion proxy
+  // since Xenova/distilbert-base-uncased-emotion is not available
   emotion: {
     task: "text-classification",
-    model: "Xenova/distilbert-base-uncased-emotion",
+    model: "Xenova/twitter-roberta-base-sentiment-latest",
     quantized: true,
   },
   embedding: {

@@ -1,15 +1,16 @@
-// src/middleware.ts
-// Next.js middleware for auth protection and rate limiting
+// src/proxy.ts
+// Next.js proxy for auth protection and rate limiting (replaces middleware in Next.js 16)
 
 import { auth } from "@/lib/auth";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const protectedRoutes = ["/dashboard"];
 const authRoutes = ["/login", "/register"];
 
-export default auth((req) => {
+export default async function middleware(req: NextRequest) {
+  const session = await auth();
   const { nextUrl } = req;
-  const isLoggedIn = !!req.auth;
+  const isLoggedIn = !!session;
   const isProtected = protectedRoutes.some(
     (route) =>
       nextUrl.pathname === route || nextUrl.pathname.startsWith(`${route}/`)
@@ -33,7 +34,7 @@ export default auth((req) => {
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: [
@@ -45,6 +46,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - public files
      */
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\.png$).*)",
   ],
 };
