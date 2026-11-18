@@ -6,10 +6,23 @@ import type { TextClassificationOutput } from "@xenova/transformers";
 import { analyzeWithHeuristics, checkRedFlags } from "./rules/heuristics";
 import { analyzeContext as analyzeContextML } from "./classifiers/context";
 import { extractMessageContext, generateDynamicExplanation, generateDynamicSuggestions } from "./rules/dynamicFeedback";
+import { AudienceProfile, calculateAudienceModifiers, DEFAULT_AUDIENCE, getPresetAudience } from "./audience";
 
 export interface AnalysisInput {
   text: string;
   conversationHistory?: string[];
+  audience?: AudienceProfile | string; // AudienceProfile object or preset ID
+}
+
+/**
+ * Resolve audience from input (preset ID string or full profile object)
+ */
+function resolveAudience(audience?: AudienceProfile | string): AudienceProfile {
+  if (!audience) return DEFAULT_AUDIENCE;
+  if (typeof audience === "string") {
+    return getPresetAudience(audience) || DEFAULT_AUDIENCE;
+  }
+  return audience;
 }
 
 export interface CategoryScore {
@@ -43,6 +56,8 @@ export interface AnalysisResult {
     modelVersion: string;
     processingTime: number;
     charCount: number;
+    audienceId?: string;
+    audienceName?: string;
   };
 }
 
@@ -52,7 +67,13 @@ export interface AnalysisResult {
  */
 export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult> {
   const startTime = Date.now();
-  const { text } = input;
+  const { text, audience } = input;
+
+  // Resolve audience profile
+  const audienceProfile = resolveAudience(audience);
+
+  // Calculate audience modifiers
+  const audienceModifiers = calculateAudienceModifiers(audienceProfile.traits);
 
   // Check for red flags first (always run, even before ML)
   const redFlags = checkRedFlags(text);
@@ -78,7 +99,7 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
     const allCategories = [...mlCategories, ...heuristicResult.categories];
 
     // Deduplicate categories by category key (keep highest score)
-    const dedupedCategories = Object.values(
+    let dedupedCategories = Object.values(
       allCategories.reduce((acc, cat) => {
         if (!acc[cat.category] || cat.score > acc[cat.category].score) {
           acc[cat.category] = cat;
@@ -87,12 +108,26 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
       }, {} as Record<string, CategoryScore>)
     );
 
+    // Apply audience category multipliers
+    dedupedCategories = dedupedCategories.map(cat => ({
+      ...cat,
+      score: Math.min(1, cat.score * (audienceModifiers.categoryMultipliers[cat.category] || 1.0)),
+    }));
+
     // Calculate severity using BOTH ML sentiment AND heuristic categories
     const severity = calculateSeverity(dedupedCategories, sentimentResult);
 
+    // Apply audience severity adjustment
+    const adjustedSeverityScore = Math.max(0, Math.min(1,
+      (severity.level - 1) / 4 + audienceModifiers.severityAdjustment
+    ));
+    const adjustedSeverityLevel = Math.max(1, Math.min(5, Math.round(adjustedSeverityScore * 4) + 1)) as SeverityResult["level"];
+    const severityLabels = { 1: "Minimal", 2: "Low", 3: "Moderate", 4: "High", 5: "Severe" };
+    const adjustedSeverity: SeverityResult = { level: adjustedSeverityLevel, label: severityLabels[adjustedSeverityLevel] };
+
     // Red flags always force NOT_OK verdict and maximum severity
-    let verdict = determineVerdict(severity.level, sentimentResult);
-    let finalSeverity = severity;
+    let verdict = determineVerdict(adjustedSeverity.level, sentimentResult, audienceModifiers.verdictThresholdAdjustment);
+    let finalSeverity = adjustedSeverity;
     if (redFlags.length > 0) {
       verdict = "NOT_OK";
       finalSeverity = { level: 5, label: "Severe" };
@@ -102,7 +137,7 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
     const confidence = calculateConfidence(sentimentResult, emotionResult, heuristicResult);
 
     // Generate feedback using ALL detected categories (ML + rules)
-    const feedback = generateFeedback(text, dedupedCategories, finalSeverity, verdict, redFlags);
+    const feedback = generateFeedback(text, dedupedCategories, finalSeverity, verdict, redFlags, audienceProfile);
 
     analysisResult = {
       verdict,
@@ -114,6 +149,8 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
         modelVersion,
         processingTime: Date.now() - startTime,
         charCount: text.length,
+        audienceId: audienceProfile.id,
+        audienceName: audienceProfile.name,
       },
     };
   } catch (mlError) {
@@ -124,11 +161,17 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
     // Pass red flags to heuristic analysis so feedback accounts for them
     const heuristicResult = analyzeWithHeuristics(text, redFlags);
 
+    // Apply audience modifiers to fallback result too
+    let adjustedCategories = heuristicResult.categories.map(cat => ({
+      ...cat,
+      score: Math.min(1, cat.score * (audienceModifiers.categoryMultipliers[cat.category] || 1.0)),
+    }));
+
     analysisResult = {
       verdict: heuristicResult.verdict,
       confidence: heuristicResult.confidence,
       severity: heuristicResult.severity,
-      categories: heuristicResult.categories,
+      categories: adjustedCategories,
       feedback: {
         explanation: heuristicResult.explanation,
         suggestions: heuristicResult.suggestions,
@@ -137,6 +180,8 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
         modelVersion,
         processingTime: Date.now() - startTime,
         charCount: text.length,
+        audienceId: audienceProfile.id,
+        audienceName: audienceProfile.name,
       },
     };
   }
@@ -358,11 +403,14 @@ function calculateSeverity(
  */
 function determineVerdict(
   severityLevel: number,
-  sentiment: { label: string; score: number }
+  sentiment: { label: string; score: number },
+  thresholdAdjustment: number = 0
 ): "OK" | "CAUTION" | "NOT_OK" {
-  if (severityLevel >= 4) return "NOT_OK";
-  if (severityLevel >= 3) return "CAUTION";
-  if (severityLevel === 2 && sentiment.label === "NEGATIVE") return "CAUTION";
+  // Apply threshold adjustment (positive = stricter)
+  const adjustedLevel = severityLevel + Math.round(thresholdAdjustment * 4);
+  if (adjustedLevel >= 4) return "NOT_OK";
+  if (adjustedLevel >= 3) return "CAUTION";
+  if (adjustedLevel === 2 && sentiment.label === "NEGATIVE") return "CAUTION";
   return "OK";
 }
 
@@ -396,7 +444,8 @@ function generateFeedback(
   categories: CategoryScore[],
   severity: SeverityResult,
   verdict: "OK" | "CAUTION" | "NOT_OK",
-  redFlags: string[] = []
+  redFlags: string[] = [],
+  audienceProfile?: AudienceProfile
 ): FeedbackResult {
   const topCategory = categories[0];
   const isNegative = verdict !== "OK";
@@ -457,6 +506,11 @@ function generateFeedback(
   // even if overall verdict is OK (ML model might miss sarcasm, passive-aggression, etc.)
   const treatAsNegative = isNegative || hasHeuristicNegatives;
 
+  // Add audience-specific context to explanation
+  const audienceContext = audienceProfile
+    ? ` (analyzed for: ${audienceProfile.name})`
+    : "";
+
   if (!treatAsNegative) {
     // Check if there are any notable patterns even in "OK" messages
     const notableCategories = categories.filter(c => c.score >= 0.3 &&
@@ -471,15 +525,98 @@ function generateFeedback(
     suggestions.push("Great job! Your communication style is clear and considerate.");
   } else {
     // Use dynamic feedback generation
-    explanation = generateDynamicExplanation(text, categories, context, severity, verdict);
+    explanation = generateDynamicExplanation(text, categories, context, severity, verdict) + audienceContext;
     const dynamicSuggestions = generateDynamicSuggestions(text, categories, context, verdict);
     suggestions.push(...dynamicSuggestions);
+  }
+
+  // Add audience-specific suggestions
+  if (audienceProfile) {
+    suggestions.push(...generateAudienceSuggestions(text, categories, audienceProfile));
   }
 
   // Deduplicate suggestions
   const uniqueSuggestions = [...new Set(suggestions)].slice(0, 5);
 
   return { explanation, suggestions: uniqueSuggestions };
+}
+
+/**
+ * Generate audience-specific suggestions based on the target audience's traits
+ */
+function generateAudienceSuggestions(
+  text: string,
+  categories: CategoryScore[],
+  audience: AudienceProfile
+): string[] {
+  const suggestions: string[] = [];
+  const traits = audience.traits;
+
+  // Formality suggestions
+  if (traits.formality === "formal" || traits.formality === "very_formal") {
+    if (text.match(/\b(hey|hi|hello|thanks|thx|ok|okay|yeah|yep|nah)\b/i)) {
+      suggestions.push(`For ${audience.name}, consider more formal greetings and avoid casual abbreviations.`);
+    }
+    if (text.match(/\b(gonna|wanna|gotta|kinda|sorta)\b/i)) {
+      suggestions.push("Avoid informal contractions like 'gonna', 'wanna' — use 'going to', 'want to' instead.");
+    }
+  }
+
+  // Directness suggestions
+  if (traits.directness === "indirect" || traits.directness === "very_indirect") {
+    if (text.match(/\b(you (must|need to|have to|should))\b/i)) {
+      suggestions.push(`${audience.name} may prefer softer phrasing: "Could you..." or "Would it be possible to..." instead of "You must..."`);
+    }
+  } else if (traits.directness === "direct" || traits.directness === "very_direct") {
+    if (text.match(/\b(i (think|feel|believe) (maybe|perhaps|possibly))\b/i)) {
+      suggestions.push(`${audience.name} appreciates directness — consider stating your point more clearly.`);
+    }
+  }
+
+  // Humor tolerance
+  if (traits.humorTolerance === "none" || traits.humorTolerance === "low") {
+    if (text.match(/\b(lol|haha|jk|joking|sarcasm|sarcastic)\b/i) || text.includes("😂") || text.includes("🤣")) {
+      suggestions.push(`${audience.name} may not appreciate humor or sarcasm in this context.`);
+    }
+  }
+
+  // Power dynamic
+  if (traits.powerDynamic === "they_senior") {
+    if (text.match(/\b(i (disagree|don't agree|think you're wrong))\b/i)) {
+      suggestions.push("When disagreeing with a superior, try: 'I see it differently because...' or 'Have you considered...?'");
+    }
+    if (!text.match(/\b(please|thank you|appreciate|grateful)\b/i)) {
+      suggestions.push("Consider adding polite markers like 'please' or 'thank you' when messaging a superior.");
+    }
+  }
+
+  // Emotional closeness
+  if (traits.emotionalCloseness === "stranger" || traits.emotionalCloseness === "acquaintance") {
+    if (text.match(/\b(i (love|miss|need) you)\b/i) || text.match(/\b(you're (amazing|perfect|incredible))\b/i)) {
+      suggestions.push(`With ${audience.name}, overly intimate language may feel inappropriate.`);
+    }
+  }
+
+  // Sensitivity-specific suggestions based on detected categories
+  const detectedCategories = categories.filter(c => c.score >= 0.15).map(c => c.category);
+
+  if (traits.sensitivity.sarcasm > 0.6 && detectedCategories.some(c => ["sarcastic", "mocking_politeness"].includes(c))) {
+    suggestions.push(`${audience.name} is sensitive to sarcasm — consider being more direct.`);
+  }
+
+  if (traits.sensitivity.criticism > 0.6 && detectedCategories.includes("negative_critical")) {
+    suggestions.push(`${audience.name} may take criticism personally. Frame as suggestions: "What if we tried...?"`);
+  }
+
+  if (traits.sensitivity.abbreviations > 0.5 && detectedCategories.includes("dismissive_abbreviation")) {
+    suggestions.push(`${audience.name} prefers full words over abbreviations like "k", "idk", "thx".`);
+  }
+
+  if (traits.sensitivity.caps > 0.6 && detectedCategories.includes("shouting_caps")) {
+    suggestions.push(`ALL CAPS feels aggressive to ${audience.name}. Use italics or "I strongly feel..." for emphasis.`);
+  }
+
+  return suggestions;
 }
 
 /**

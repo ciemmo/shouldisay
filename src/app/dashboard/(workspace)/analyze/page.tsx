@@ -12,8 +12,32 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Label } from "@/components/ui/Label";
-import { Loader2, AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, RotateCcw, TrendingUp, Lock } from "lucide-react";
+import { Loader2, AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp, RotateCcw, TrendingUp, Lock, Users, UserPlus, Settings, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Audience types (matching backend)
+interface AudienceProfile {
+  id: string;
+  name: string;
+  type: "preset" | "custom";
+  description: string;
+}
+
+const PRESET_AUDIENCES: AudienceProfile[] = [
+  { id: "friend", name: "Close Friend", type: "preset", description: "Casual, direct, humor welcome" },
+  { id: "spouse", name: "Spouse/Partner", type: "preset", description: "Intimate, very direct, high emotional safety" },
+  { id: "family", name: "Family Member", type: "preset", description: "Warm but mindful, varies by relationship" },
+  { id: "coworker", name: "Co-worker", type: "preset", description: "Professional peer, clear and appropriately warm" },
+  { id: "boss", name: "Boss/Manager", type: "preset", description: "Formal, solution-oriented, respectful" },
+  { id: "client", name: "Client/Customer", type: "preset", description: "Professional, accommodating, polished" },
+  { id: "stranger", name: "Stranger", type: "preset", description: "Polite, clear, no assumptions" },
+  { id: "acquaintance", name: "Acquaintance", type: "preset", description: "Polite but relaxed, some familiarity" },
+  { id: "groupchat", name: "Group Chat", type: "preset", description: "Casual but considerate, multiple people" },
+];
+
+// Default audience for each tier
+const DEFAULT_FREE_AUDIENCE = "friend";
+const DEFAULT_PRO_AUDIENCE = "coworker";
 
 interface AnalysisResult {
   id: string;
@@ -64,10 +88,28 @@ function AnalyzeContent() {
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [showCategories, setShowCategories] = useState(true);
   const [loadedAnalysisId, setLoadedAnalysisId] = useState<string | null>(null);
+  const [selectedAudience, setSelectedAudience] = useState<string>(DEFAULT_FREE_AUDIENCE);
+  const [showCustomAudienceModal, setShowCustomAudienceModal] = useState(false);
+  const [customAudiences, setCustomAudiences] = useState<AudienceProfile[]>([]);
   const isLoadingHistory = Boolean(analysisId && loadedAnalysisId !== analysisId);
 
   const isPro = session?.user?.subscriptionStatus !== "FREE" && session?.user?.subscriptionStatus !== "CANCELED" && session?.user?.subscriptionStatus !== "PAST_DUE";
   const maxChars = isPro ? 10000 : 500;
+
+  // Load custom audiences for Pro users
+  useEffect(() => {
+    if (isPro) {
+      fetch("/api/user/audiences")
+        .then((res) => res.ok ? res.json() : [])
+        .then((data: AudienceProfile[]) => setCustomAudiences(data))
+        .catch(() => setCustomAudiences([]));
+    }
+  }, [isPro]);
+
+  // Reset audience to default when tier changes
+  useEffect(() => {
+    setSelectedAudience(isPro ? DEFAULT_PRO_AUDIENCE : DEFAULT_FREE_AUDIENCE);
+  }, [isPro]);
 
   // Load existing analysis if ID provided
   useEffect(() => {
@@ -111,6 +153,7 @@ function AnalyzeContent() {
         body: JSON.stringify({
           text,
           conversationHistory: isPro ? conversationHistory : undefined,
+          audience: selectedAudience,
           options: { detailLevel: "detailed", includeSuggestions: true }
         }),
       });
@@ -207,6 +250,94 @@ function AnalyzeContent() {
               disabled={isLoading || isLoadingHistory}
               maxLength={maxChars}
             />
+
+            {/* Audience Selection */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="audience-select" className="text-sm font-medium">
+                  Analyze For
+                </Label>
+                <Badge variant="outline" className="text-xs">
+                  <Target className="h-3 w-3 mr-1" />
+                  Audience-aware analysis
+                </Badge>
+              </div>
+
+              {/* Preset Audiences Dropdown */}
+              <div className="relative">
+                <select
+                  id="audience-select"
+                  value={selectedAudience}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === "__create_custom__") {
+                      setShowCustomAudienceModal(true);
+                      // Reset to previous selection
+                      setTimeout(() => {
+                        const selectEl = document.getElementById("audience-select") as HTMLSelectElement;
+                        if (selectEl) selectEl.value = selectedAudience;
+                      }, 0);
+                    } else {
+                      setSelectedAudience(value);
+                      setShowCustomAudienceModal(false);
+                    }
+                  }}
+                  className={cn(
+                    "w-full appearance-none bg-background border border-input rounded-md py-2.5 pr-10 pl-3 text-sm",
+                    "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                    "disabled:opacity-50 disabled:pointer-events-none"
+                  )}
+                  disabled={isLoading || isLoadingHistory}
+                >
+                  <optgroup label="— Quick Select (Free) —">
+                    {PRESET_AUDIENCES.map((audience) => (
+                      <option key={audience.id} value={audience.id} title={audience.description}>
+                        {audience.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {isPro && customAudiences.length > 0 && (
+                    <optgroup label="— Your Custom Audiences (Pro) —">
+                      {customAudiences.map((audience) => (
+                        <option key={audience.id} value={audience.id} title={audience.description}>
+                          {audience.name} (custom)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {isPro && (
+                    <option value="__new_custom__" disabled className="text-muted-foreground">
+                      ─────────────
+                    </option>
+                  )}
+                  {isPro && (
+                    <option value="__create_custom__">
+                      + Create New Custom Audience...
+                    </option>
+                  )}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              </div>
+
+              {/* Selected Audience Description */}
+              <div className="text-sm text-muted-foreground min-h-[20px]">
+                {(() => {
+                  const audience = PRESET_AUDIENCES.find(a => a.id === selectedAudience) ||
+                    customAudiences.find(a => a.id === selectedAudience);
+                  return audience ? audience.description : "Select an audience to tailor the analysis";
+                })()}
+              </div>
+
+              {!isPro && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 bg-muted rounded-md">
+                  <Lock className="h-4 w-4 text-brand" />
+                  <span>
+                    <strong>Pro feature:</strong> Create custom audiences like "Paul, 22, makes edgy jokes" with
+                    tailored sensitivity settings. <a href="/dashboard/billing" className="underline hover:text-brand ml-1">Upgrade to Pro</a>
+                  </span>
+                </div>
+              )}
+            </div>
 
             {/* Conversation History Input - Pro Tier Feature */}
             <div className="space-y-3">
@@ -487,7 +618,238 @@ function AnalyzeContent() {
           )}
         </div>
       )}
+
+      {/* Custom Audience Modal */}
+      {showCustomAudienceModal && isPro && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="w-full max-w-md bg-background rounded-lg shadow-xl border p-6 animate-slide-up">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Create Custom Audience</h2>
+              <Button variant="ghost" size="icon" onClick={() => setShowCustomAudienceModal(false)}>
+                <XCircle className="h-5 w-5" />
+              </Button>
+            </div>
+            <CustomAudienceForm
+              onSave={(audience) => {
+                setCustomAudiences(prev => [...prev, audience]);
+                setSelectedAudience(audience.id);
+                setShowCustomAudienceModal(false);
+              }}
+              onCancel={() => setShowCustomAudienceModal(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+// Custom Audience Form Component
+function CustomAudienceForm({ onSave, onCancel }: {
+  onSave: (audience: AudienceProfile) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [formality, setFormality] = useState<"very_casual" | "casual" | "neutral" | "formal" | "very_formal">("neutral");
+  const [directness, setDirectness] = useState<"very_indirect" | "indirect" | "balanced" | "direct" | "very_direct">("balanced");
+  const [humorTolerance, setHumorTolerance] = useState<"none" | "low" | "moderate" | "high" | "edgy">("moderate");
+  const [sensitivity, setSensitivity] = useState({
+    sarcasm: 0.5,
+    criticism: 0.5,
+    abbreviations: 0.5,
+    caps: 0.5,
+    profanity: 0.5,
+    emotionalExpression: 0.5,
+    hedging: 0.5,
+    commands: 0.5,
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError("Name is required");
+      return;
+    }
+    setIsSubmitting(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/user/audiences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+          traits: {
+            formality,
+            directness,
+            humorTolerance,
+            vulnerabilityTolerance: "moderate",
+            sensitivity,
+            appreciationFor: {
+              politeness: 0.5,
+              clarity: 0.5,
+              warmth: 0.5,
+              thoroughness: 0.5,
+              brevity: 0.5,
+              empathy: 0.5,
+            },
+            powerDynamic: "equal",
+            emotionalCloseness: "acquaintance",
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to create audience");
+      }
+
+      const audience = await response.json();
+      onSave(audience);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create audience");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const sensitivityOptions = [
+    { key: "sarcasm" as const, label: "Sarcasm Sensitivity", desc: "How negatively sarcasm is viewed" },
+    { key: "criticism" as const, label: "Criticism Sensitivity", desc: "How negatively direct criticism is viewed" },
+    { key: "abbreviations" as const, label: "Abbreviations", desc: "How negatively casual abbreviations are viewed" },
+    { key: "caps" as const, label: "ALL CAPS", desc: "How negatively shouting is viewed" },
+    { key: "profanity" as const, label: "Profanity", desc: "How negatively profanity is viewed" },
+    { key: "emotionalExpression" as const, label: "Emotional Expression", desc: "How negatively strong emotions are viewed" },
+    { key: "hedging" as const, label: "Hedging/Uncertainty", desc: "How negatively hedging is viewed" },
+    { key: "commands" as const, label: "Commands/Imperatives", desc: "How negatively direct commands are viewed" },
+  ];
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="audience-name" className="text-sm font-medium">Name *</Label>
+        <input
+          id="audience-name"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g., Paul, 22, makes edgy jokes"
+          className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          maxLength={100}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="audience-description" className="text-sm font-medium">Description</Label>
+        <textarea
+          id="audience-description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Brief description of this person/context"
+          className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          maxLength={500}
+          rows={2}
+        />
+      </div>
+
+      <div className="grid gap-4 grid-cols-2">
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Formality</Label>
+          <select
+            value={formality}
+            onChange={(e) => setFormality(e.target.value as typeof formality)}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="very_casual">Very Casual</option>
+            <option value="casual">Casual</option>
+            <option value="neutral">Neutral</option>
+            <option value="formal">Formal</option>
+            <option value="very_formal">Very Formal</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Directness</Label>
+          <select
+            value={directness}
+            onChange={(e) => setDirectness(e.target.value as typeof directness)}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="very_indirect">Very Indirect</option>
+            <option value="indirect">Indirect</option>
+            <option value="balanced">Balanced</option>
+            <option value="direct">Direct</option>
+            <option value="very_direct">Very Direct</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Humor Tolerance</Label>
+          <select
+            value={humorTolerance}
+            onChange={(e) => setHumorTolerance(e.target.value as typeof humorTolerance)}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="none">None</option>
+            <option value="low">Low</option>
+            <option value="moderate">Moderate</option>
+            <option value="high">High</option>
+            <option value="edgy">Edgy</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">Sensitivity Settings (0 = tolerant, 1 = sensitive)</Label>
+        <div className="grid gap-3 grid-cols-2">
+          {sensitivityOptions.map((opt) => (
+            <div key={opt.key} className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">{opt.label}</span>
+                <span className="text-sm font-mono text-muted-foreground">{Math.round(sensitivity[opt.key] * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.1"
+                value={sensitivity[opt.key]}
+                onChange={(e) => setSensitivity(prev => ({ ...prev, [opt.key]: parseFloat(e.target.value) }))}
+                className="w-full h-2 bg-muted rounded-lg appearance-none accent-brand"
+                title={opt.desc}
+              />
+              <p className="text-xs text-muted-foreground">{opt.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-2 pt-4 border-t">
+        <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isSubmitting} className="flex-1">
+          {isSubmitting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            "Save Audience"
+          )}
+        </Button>
+      </div>
+    </form>
   );
 }
 
