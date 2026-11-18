@@ -366,14 +366,42 @@ export function calculateAudienceModifiers(traits: AudienceTraits): AudienceModi
   // Map sensitivity to category multipliers
   // Higher sensitivity = higher multiplier = more severe detection
   const sensitivityMap: Record<keyof AudienceTraits["sensitivity"], string[]> = {
-    sarcasm: ["sarcastic", "mocking_politeness", "feigned_ignorance", "false_alignment", "condescending_praise", "fake_reasonableness", "veiled_threat", "dismissive_just"],
-    criticism: ["negative_critical", "blaming", "constructive_critique"],
-    abbreviations: ["dismissive_abbreviation", "lazy_typing"],
-    caps: ["shouting_caps", "excessive_punctuation"],
-    profanity: ["rude", "aggressive"],
-    emotionalExpression: ["emphatic_repetition", "keyboard_smash", "over_apologetic"],
-    hedging: ["hedging", "uncertain_typing", "performative_thinking"],
-    commands: ["aggressive", "demanding_brevity"],
+    sarcasm: [
+      "sarcastic", "mocking_politeness", "feigned_ignorance", "false_alignment",
+      "condescending_praise", "fake_reasonableness", "veiled_threat", "dismissive_just",
+      "gaslighting", "negging", "concern_trolling", "sealioning"
+    ],
+    criticism: [
+      "negative_critical", "blaming", "constructive_critique",
+      "condescending", "backhanded_compliment", "minimizing", "tone_policing",
+      "projection", "moving_goalposts"
+    ],
+    abbreviations: [
+      "dismissive_abbreviation", "lazy_typing",
+      "inappropriate_familiarity", "flirtatious_language" // pet names as informal address
+    ],
+    caps: [
+      "shouting_caps", "excessive_punctuation",
+      "emphatic_repetition", "keyboard_smash"
+    ],
+    profanity: [
+      "rude", "aggressive", "threatening",
+      "emotional_blackmail", "inappropriate_familiarity", "flirtatious_language" // inappropriate intimacy
+    ],
+    emotionalExpression: [
+      "emphatic_repetition", "keyboard_smash", "over_apologetic",
+      "love_bombing", "victim_playing", "performative_empathy",
+      "flirtatious_language", "praise_stacking" // excessive praise/flirtation
+    ],
+    hedging: [
+      "hedging", "uncertain_typing", "performative_thinking",
+      "passive_aggressive", "deflection", "stonewalling",
+      "weaponized_helpfulness", "fake_reasonableness"
+    ],
+    commands: [
+      "aggressive", "demanding_brevity",
+      "blaming", "threatening", "tone_policing"
+    ],
   };
 
   for (const [sensitivityKey, categories] of Object.entries(sensitivityMap)) {
@@ -382,6 +410,58 @@ export function calculateAudienceModifiers(traits: AudienceTraits): AudienceModi
     const multiplier = 0.5 + sensitivity * 1.5;
     for (const cat of categories) {
       categoryMultipliers[cat] = multiplier;
+    }
+  }
+
+  // Apply formality and power dynamic modifiers to ALL negative categories
+  // Formal/professional audiences are more sensitive to negative tones overall
+  const formalityScore = {
+    very_casual: 0,
+    casual: 0.25,
+    neutral: 0.5,
+    formal: 0.75,
+    very_formal: 1.0,
+  };
+  const powerScore = {
+    equal: 0,
+    you_senior: 0.25,
+    they_senior: 0.5,
+    varies: 0.25,
+  };
+  const formalityMultiplier = 1 + formalityScore[traits.formality] * 2; // 1.0 to 3.0
+  const powerMultiplier = 1 + powerScore[traits.powerDynamic] * 1.5; // 1.0 to 1.75
+  const professionalContextMultiplier = formalityMultiplier * powerMultiplier;
+
+  // All negative categories get amplified for formal/hierarchical audiences
+  const negativeCategories = [
+    // Manipulation tactics
+    "gaslighting", "guilt_tripping", "stonewalling", "deflection", "condescending",
+    "backhanded_compliment", "victim_playing", "minimizing", "love_bombing",
+    "sealioning", "concern_trolling", "negging", "emotional_blackmail",
+    "tone_policing", "projection", "moving_goalposts", "triangulation",
+    // Contextual sarcasm
+    "mocking_politeness", "feigned_ignorance", "false_alignment",
+    "weaponized_helpfulness", "performative_empathy", "condescending_praise",
+    "fake_reasonableness", "veiled_threat", "dismissive_just",
+    // Typing quirks
+    "dismissive_abbreviation", "uncertain_typing", "emphatic_repetition",
+    "shouting_caps", "excessive_punctuation", "keyboard_smash",
+    "lazy_typing", "over_apologetic", "hedging", "demanding_brevity",
+    "performative_thinking",
+    // Criticism/aggression
+    "aggressive", "rude", "dismissive", "passive_aggressive", "blaming",
+    "threatening", "sarcastic", "negative_critical",
+    // New workplace patterns
+    "inappropriate_familiarity", "flirtatious_language", "praise_stacking",
+    // Constructive critique (can be perceived negatively in some contexts)
+    "constructive_critique",
+  ];
+
+  for (const cat of negativeCategories) {
+    if (categoryMultipliers[cat]) {
+      categoryMultipliers[cat] *= professionalContextMultiplier;
+    } else {
+      categoryMultipliers[cat] = professionalContextMultiplier;
     }
   }
 

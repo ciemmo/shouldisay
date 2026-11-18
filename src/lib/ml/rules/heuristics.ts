@@ -368,6 +368,21 @@ function generateHeuristicFeedback(
         "Replace 'could be more wow' with 'The intro grabs me; the middle could use a stronger hook.'",
         "Name what works, then what needs work: 'X is strong because... Y would improve if...'",
       ],
+      inappropriate_familiarity: [
+        "Pet names like 'sweetie', 'honey', 'babe' are inappropriate with colleagues.",
+        "Replace 'my sweet coworker' with 'my colleague' or their name — keep it professional.",
+        "In workplace settings, use names or professional titles, not terms of endearment.",
+      ],
+      flirtatious_language: [
+        "Tildes (~), winks, and stacked compliments can read as flirtatious in professional contexts.",
+        "Replace 'How's my awesome, sweet coworker~?' with 'How are you doing today?'",
+        "Save playful language for personal relationships — at work, be warm but professional.",
+      ],
+      praise_stacking: [
+        "Multiple excessive compliments ('awesome sweet lovely') can feel insincere or manipulative.",
+        "One genuine compliment lands better: 'Great work on the presentation' vs 'You're amazing incredible brilliant.'",
+        "Be specific: 'Your analysis was thorough' means more than stacked superlatives.",
+      ],
     };
 
     for (const cat of categories) {

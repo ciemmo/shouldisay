@@ -465,7 +465,8 @@ function generateFeedback(
      "dismissive_abbreviation", "uncertain_typing", "emphatic_repetition",
      "shouting_caps", "excessive_punctuation", "keyboard_smash",
      "lazy_typing", "over_apologetic", "hedging", "demanding_brevity",
-     "performative_thinking"
+     "performative_thinking",
+     "inappropriate_familiarity", "flirtatious_language", "praise_stacking"
     ].includes(c.category));
 
   const hasHeuristicNegatives = heuristicNegativeCats.length > 0;
@@ -614,6 +615,31 @@ function generateAudienceSuggestions(
 
   if (traits.sensitivity.caps > 0.6 && detectedCategories.includes("shouting_caps")) {
     suggestions.push(`ALL CAPS feels aggressive to ${audience.name}. Use italics or "I strongly feel..." for emphasis.`);
+  }
+
+  // Workplace flirtation / inappropriate familiarity suggestions
+  if (detectedCategories.includes("inappropriate_familiarity")) {
+    if (traits.formality === "formal" || traits.formality === "very_formal" || traits.powerDynamic === "they_senior") {
+      suggestions.push(`${audience.name} expects professional boundaries — avoid pet names like "honey", "sweetie", "babe".`);
+    } else {
+      suggestions.push(`Terms of endearment can feel inappropriate with ${audience.name}. Use their name instead.`);
+    }
+  }
+
+  if (detectedCategories.includes("flirtatious_language")) {
+    if (traits.formality === "formal" || traits.formality === "very_formal" || traits.humorTolerance === "none" || traits.humorTolerance === "low") {
+      suggestions.push(`${audience.name} may perceive tildes (~), winks, and stacked compliments as unprofessional or flirtatious.`);
+    } else {
+      suggestions.push(`Playful language like tildes (~) and wink emojis can be misread by ${audience.name}.`);
+    }
+  }
+
+  if (detectedCategories.includes("praise_stacking")) {
+    if (traits.formality === "formal" || traits.formality === "very_formal") {
+      suggestions.push(`Multiple excessive compliments can feel insincere or manipulative to ${audience.name}. One specific compliment is better.`);
+    } else {
+      suggestions.push(`Stacked superlatives ("awesome sweet lovely") can overwhelm ${audience.name}. Be specific: "Great job on X."`);
+    }
   }
 
   return suggestions;

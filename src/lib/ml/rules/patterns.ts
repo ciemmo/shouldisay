@@ -631,6 +631,51 @@ export const NEGATIVE_PATTERNS: PatternRule[] = [
     ],
     weight: 0.4,
   },
+
+  // Inappropriate familiarity / unprofessional pet names in workplace
+  {
+    category: "inappropriate_familiarity",
+    label: "Inappropriate Familiarity",
+    patterns: [
+      // Pet names in professional contexts
+      /\b(my\s+)?(awesome|sweet|lovely|honey|sweetie|babe|dear|darling|cutie|beautiful|gorgeous)\s+(co-?worker|colleague|boss|manager|client|customer|team|staff)\b/gi,
+      // Direct address with pet names
+      /\b(hey|hi|hello|how'?s)\b.{0,10}\b(honey|sweetie|babe|dear|darling|cutie|lovely|beautiful|gorgeous)\b/gi,
+      // "My [pet name] [role]" constructions
+      /\bmy\s+(sweet|lovely|awesome|amazing|wonderful)\s+(co-?worker|colleague|assistant|intern)\b/gi,
+    ],
+    weight: 0.85,
+  },
+
+  // Flirtatious language - excessive praise + tilde/emoji suggesting flirtation
+  {
+    category: "flirtatious_language",
+    label: "Flirtatious Language",
+    patterns: [
+      // Tilde usage suggesting flirtatious tone
+      /~+/g,
+      // Multiple excessive compliments in sequence (space or comma separated)
+      /\b(awesome|sweet|lovely|amazing|wonderful|fantastic|incredible|gorgeous|beautiful)[\s,]+(awesome|sweet|lovely|amazing|wonderful|fantastic|incredible|gorgeous|beautiful)\b/gi,
+      // "How's my [compliment stack] [person] doing" pattern (handles commas)
+      /\bhow'?s\s+my\s+(awesome|sweet|lovely|amazing|wonderful|fantastic|incredible|gorgeous|beautiful)[\s,]+(co-?worker|colleague|assistant|intern|team)\b/gi,
+      // Wink/emoji combinations with compliments
+      /\b(awesome|sweet|lovely|amazing|gorgeous|beautiful)\b.{0,20}[;😉😊😍🥰]/g,
+    ],
+    weight: 0.8,
+  },
+
+  // Praise stacking - multiple excessive positive adjectives in sequence
+  {
+    category: "praise_stacking",
+    label: "Excessive Praise Stacking",
+    patterns: [
+      // Three or more positive adjectives in a row (space or comma separated)
+      /\b(awesome|sweet|lovely|amazing|wonderful|fantastic|incredible|gorgeous|beautiful|perfect|brilliant|outstanding|exceptional)[\s,]+(awesome|sweet|lovely|amazing|wonderful|fantastic|incredible|gorgeous|beautiful|perfect|brilliant|outstanding|exceptional)[\s,]+(awesome|sweet|lovely|amazing|wonderful|fantastic|incredible|gorgeous|beautiful|perfect|brilliant|outstanding|exceptional)\b/gi,
+      // "My [adj] [adj] [adj] [person]" pattern (handles commas)
+      /\bmy\s+(awesome|sweet|lovely|amazing|wonderful|fantastic|incredible|gorgeous|beautiful)[\s,]+(awesome|sweet|lovely|amazing|wonderful|fantastic|incredible|gorgeous|beautiful)\s+(co-?worker|colleague|assistant|intern|team|staff)\b/gi,
+    ],
+    weight: 0.75,
+  },
 ];
 
 /**
