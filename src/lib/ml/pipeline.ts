@@ -5,6 +5,7 @@ import { getPipeline } from "./models/registry";
 import type { TextClassificationOutput } from "@xenova/transformers";
 import { analyzeWithHeuristics, checkRedFlags } from "./rules/heuristics";
 import { analyzeContext as analyzeContextML } from "./classifiers/context";
+import { extractMessageContext, generateDynamicExplanation, generateDynamicSuggestions } from "./rules/dynamicFeedback";
 
 export interface AnalysisInput {
   text: string;
@@ -46,7 +47,8 @@ export interface AnalysisResult {
 }
 
 /**
- * Main analysis function - runs ML classifiers with rule-based fallback
+ * Main analysis function - runs ML classifiers AND rule-based analysis in parallel
+ * Combines both for richer, more specific results
  */
 export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult> {
   const startTime = Date.now();
@@ -59,18 +61,25 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
   let modelVersion = "transformers.js-v1";
 
   try {
-    // Try ML-based analysis first
-    const [sentimentResult, emotionResult] = await Promise.all([
+    // Run ML-based analysis AND rule-based analysis in parallel
+    const [sentimentResult, emotionResult, heuristicResult] = await Promise.all([
       runSentimentAnalysis(text),
       runEmotionAnalysis(text),
+      // Run heuristics in parallel - provides specific linguistic patterns
+      Promise.resolve(analyzeWithHeuristics(text, redFlags)),
     ]);
 
-    // Combine ML results
-    const categories = combineCategories(sentimentResult, emotionResult);
+    // Combine ML results (broad sentiment/emotion)
+    const mlCategories = combineCategories(sentimentResult, emotionResult);
+
+    // Combine with rule-based categories (specific linguistic patterns)
+    // Heuristic categories include: aggressive, rude, dismissive, passive_aggressive,
+    // blaming, threatening, sarcastic, negative_critical, polite, collaborative, etc.
+    const allCategories = [...mlCategories, ...heuristicResult.categories];
 
     // Deduplicate categories by category key (keep highest score)
     const dedupedCategories = Object.values(
-      categories.reduce((acc, cat) => {
+      allCategories.reduce((acc, cat) => {
         if (!acc[cat.category] || cat.score > acc[cat.category].score) {
           acc[cat.category] = cat;
         }
@@ -78,6 +87,7 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
       }, {} as Record<string, CategoryScore>)
     );
 
+    // Calculate severity using BOTH ML sentiment AND heuristic categories
     const severity = calculateSeverity(dedupedCategories, sentimentResult);
 
     // Red flags always force NOT_OK verdict and maximum severity
@@ -88,7 +98,10 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
       finalSeverity = { level: 5, label: "Severe" };
     }
 
-    const confidence = calculateConfidence(sentimentResult, emotionResult);
+    // Confidence based on both ML and rule-based signals
+    const confidence = calculateConfidence(sentimentResult, emotionResult, heuristicResult);
+
+    // Generate feedback using ALL detected categories (ML + rules)
     const feedback = generateFeedback(text, dedupedCategories, finalSeverity, verdict, redFlags);
 
     analysisResult = {
@@ -104,7 +117,7 @@ export async function analyzeText(input: AnalysisInput): Promise<AnalysisResult>
       },
     };
   } catch (mlError) {
-    // Fallback to rule-based analysis
+    // Fallback to rule-based analysis only
     console.warn("[ML] Transformers.js failed, falling back to heuristics:", mlError);
     modelVersion = "heuristics-fallback-v1";
 
@@ -303,10 +316,19 @@ function calculateSeverity(
   }
 
   // Add category contributions
-  const negativeCategories = ["aggressive", "rude", "dismissive", "anxious"];
+  // ML-based negative categories
+  const mlNegativeCategories = ["aggressive", "rude", "dismissive", "anxious"];
+  // Heuristic-based negative categories (specific linguistic patterns)
+  const heuristicNegativeCategories = [
+    "aggressive", "rude", "dismissive", "passive_aggressive",
+    "blaming", "threatening", "sarcastic", "negative_critical"
+  ];
   for (const cat of categories) {
-    if (negativeCategories.includes(cat.category)) {
+    if (mlNegativeCategories.includes(cat.category)) {
       severityScore += cat.score * 0.4;
+    }
+    if (heuristicNegativeCategories.includes(cat.category)) {
+      severityScore += cat.score * 0.5; // Heuristic patterns are strong signals
     }
   }
 
@@ -349,15 +371,25 @@ function determineVerdict(
  */
 function calculateConfidence(
   sentiment: { label: string; score: number },
-  emotions: Array<{ label: string; score: number }>
+  emotions: Array<{ label: string; score: number }>,
+  heuristicResult?: { categories: Array<{ category: string; score: number }>; confidence: number }
 ): number {
   // Weighted average of top predictions
   const topEmotionScore = emotions[0]?.score || 0;
-  return (sentiment.score * 0.6 + topEmotionScore * 0.4);
+  const mlConfidence = (sentiment.score * 0.6 + topEmotionScore * 0.4);
+
+  // Boost confidence if heuristic analysis found specific patterns
+  let heuristicBoost = 0;
+  if (heuristicResult && heuristicResult.categories.length > 0) {
+    const topHeuristicScore = Math.max(...heuristicResult.categories.map(c => c.score));
+    heuristicBoost = topHeuristicScore * 0.2;
+  }
+
+  return Math.min(0.95, mlConfidence + heuristicBoost);
 }
 
 /**
- * Generate human-readable feedback and suggestions
+ * Generate human-readable feedback and suggestions - DYNAMIC VERSION
  */
 function generateFeedback(
   text: string,
@@ -368,6 +400,26 @@ function generateFeedback(
 ): FeedbackResult {
   const topCategory = categories[0];
   const isNegative = verdict !== "OK";
+
+  // Check for negative heuristic patterns regardless of verdict
+  // These are specific linguistic patterns that indicate issues even if ML sentiment is positive
+  const heuristicNegativeCats = categories.filter(c => c.score >= 0.15 &&
+    ["aggressive", "rude", "dismissive", "passive_aggressive", "blaming",
+     "threatening", "sarcastic", "negative_critical",
+     "mocking_politeness", "feigned_ignorance", "false_alignment",
+     "weaponized_helpfulness", "performative_empathy", "condescending_praise",
+     "fake_reasonableness", "veiled_threat", "dismissive_just", "triangulation",
+     "gaslighting", "guilt_tripping", "stonewalling", "deflection",
+     "condescending", "backhanded_compliment", "victim_playing", "minimizing",
+     "love_bombing", "sealioning", "concern_trolling", "negging",
+     "emotional_blackmail", "tone_policing", "projection", "moving_goalposts",
+     "dismissive_abbreviation", "uncertain_typing", "emphatic_repetition",
+     "shouting_caps", "excessive_punctuation", "keyboard_smash",
+     "lazy_typing", "over_apologetic", "hedging", "demanding_brevity",
+     "performative_thinking"
+    ].includes(c.category));
+
+  const hasHeuristicNegatives = heuristicNegativeCats.length > 0;
 
   let explanation = "";
   const suggestions: string[] = [];
@@ -398,38 +450,30 @@ function generateFeedback(
     return { explanation, suggestions };
   }
 
-  if (!isNegative) {
-    explanation = "Your message comes across as constructive and respectful. No significant tone issues detected.";
+  // Extract context from the message for dynamic feedback
+  const context = extractMessageContext(text);
+
+  // If we have heuristic negative patterns, treat as negative for feedback purposes
+  // even if overall verdict is OK (ML model might miss sarcasm, passive-aggression, etc.)
+  const treatAsNegative = isNegative || hasHeuristicNegatives;
+
+  if (!treatAsNegative) {
+    // Check if there are any notable patterns even in "OK" messages
+    const notableCategories = categories.filter(c => c.score >= 0.3 &&
+      ["positive_tone", "collaborative", "empathetic", "constructive", "validating", "polite"].includes(c.category));
+
+    if (notableCategories.length > 0) {
+      const labels = notableCategories.map(c => c.label.toLowerCase()).join(", ");
+      explanation = `Your message comes across as ${labels}. No significant tone issues detected.`;
+    } else {
+      explanation = "Your message comes across as constructive and respectful. No significant tone issues detected.";
+    }
     suggestions.push("Great job! Your communication style is clear and considerate.");
   } else {
-    const primaryLabel = topCategory?.label || "negative tone";
-    explanation = `Your message shows signs of ${primaryLabel.toLowerCase()} (severity: ${severity.label}). This may be perceived as ${verdict === "NOT_OK" ? "inappropriate or hurtful" : "potentially off-putting"} by the recipient.`;
-
-    // Category-specific suggestions (ML-based categories)
-    if (categories.some(c => c.category === "negative_tone")) {
-      suggestions.push("Frame criticism constructively: \"This could be improved by...\" instead of \"This is bad\"");
-      suggestions.push("Offer specific suggestions: \"I think X would work better because...\"");
-      suggestions.push("Balance negative feedback with what's working well");
-    }
-    if (categories.some(c => c.category === "aggressive")) {
-      suggestions.push("Try softening demands: \"Could you please...\" instead of \"You must...\"");
-      suggestions.push("Replace ultimatums with requests: \"It would help if...\" instead of \"Do this or else...\"");
-    }
-    if (categories.some(c => c.category === "rude")) {
-      suggestions.push("Avoid insults or demeaning language. Focus on the behavior, not the person.");
-      suggestions.push("Replace \"That's stupid\" with \"I disagree because...\"");
-    }
-    if (categories.some(c => c.category === "dismissive")) {
-      suggestions.push("Acknowledge the other person's perspective before sharing yours.");
-      suggestions.push("Replace \"Whatever\" with \"I see it differently because...\"");
-    }
-    if (categories.some(c => c.category === "anxious")) {
-      suggestions.push("Your message may convey uncertainty. Consider stating your position more confidently.");
-    }
-
-    // General suggestions
-    suggestions.push("Read your message aloud before sending — does it sound how you intend?");
-    suggestions.push("Consider the recipient's perspective: how would you feel receiving this?");
+    // Use dynamic feedback generation
+    explanation = generateDynamicExplanation(text, categories, context, severity, verdict);
+    const dynamicSuggestions = generateDynamicSuggestions(text, categories, context, verdict);
+    suggestions.push(...dynamicSuggestions);
   }
 
   // Deduplicate suggestions
